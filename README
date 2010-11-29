@@ -1,0 +1,10 @@
+Java omni-completion for Vim 7.x
+
+Starting point of the project is this one: http://www.vim.org/scripts/script.php?script_id=1785, created by Mr. Fang Cheng. 
+I also found some modifications here: https://github.com/VictorDenisov/javacomplete
+
+I do not take credit for any of the work, I have contacted the authors about these modifications
+
+Modifications
+
+
