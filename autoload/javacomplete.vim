@@ -265,14 +265,22 @@ function! javacomplete#GoToDefinition()
         let other = ''
     endif
     call s:Trace("identify ident: " . ident . "; " . other)
+    if ident == "this"
+        let ident = other
+        let other = ""
+    endif
     if ident != ''
         if ident[0:0] ==# tolower(ident[0:0]) || ident ==# toupper(ident)
             let targetPos = java_parser#MakePos(line('.')-1, col('.')-1)
             let trees = s:SearchNameInAST(unit, ident, targetPos, 1)
             call s:Trace("trees: " . string(trees))
             if other == '' " go to definition in this file
+                call s:Trace("Like no other")
+                if len(trees) > 0
                 let pp = java_parser#DecodePos(trees[0]['pos'])
                 call setpos('.', [0, pp.line + 1, pp.col, 0])
+                    call s:Trace("DONE!!!!!!!!!!!!!!!!!!!!!!!")
+                endif
             else
                 let type = trees[0].t
                 let ci = s:DoGetClassInfo(type)
@@ -326,6 +334,7 @@ function! javacomplete#GoToDefinition()
         endif
     else
     endif
+    call s:Trace("function is done")
     " klazz
 endf
 
@@ -1587,6 +1596,8 @@ endfu
 " Given the optional argument, return all (toplevel or static member) types besides enclosing types.
 fu! s:SearchTypeByName(name, tree)
     let s:TreeVisitor.CLASSDEF    = 'call s:Trace("TreeVisitor.CLASSDEF: " . string(get(a:tree, "name", ""))) | if get(a:tree, "name", "") != "" && a:param.name =~ get(a:tree, "name", "") | call add(a:param.result, a:tree) | endif | call self.visit(a:tree.defs, a:param) '
+    let s:TreeVisitor.METHODDEF    = 'if has_key(a:tree, "body") | call self.visit(a:tree.body, a:param) | endif'
+    let s:TreeVisitor.VARDEF    = 'if has_key(a:tree, "init") | call self.visit(a:tree.init, a:param) | endif'
 
     let result = []
     call s:TreeVisitor.visit(a:tree, {'result': result, 'name': a:name})
@@ -1604,7 +1615,6 @@ fu! s:SearchNameInAST(tree, name, targetPos, fullmatch)
 
     let result = []
     call s:TreeVisitor.visit(a:tree, {'result': result, 'pos': a:targetPos, 'name': a:name})
-    "call s:Info(a:name . ' ' . string(result) . ' line: ' . line('.') . ' col: ' . col('.')) . ' ' . a:targetPos
     return result
 endfu
 
