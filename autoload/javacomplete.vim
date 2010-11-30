@@ -2151,7 +2151,7 @@ fu! s:Info(msg)
 endfu
 
 fu! s:Log(level, key, ...)
-    if a:level >= javacomplete#GetLogLevel()
+    if a:level >= -1 "javacomplete#GetLogLevel()
 ruby <<EOF
         key = VIM::evaluate("a:key")
         File.open("#{ENV['HOME']}/javacomplete.txt", "a+") { |f|
