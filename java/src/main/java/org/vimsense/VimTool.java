@@ -412,10 +412,8 @@ public class VimTool {
   }
 
   public void loadSources(Map<String, List<File>> files, boolean forceRefresh) {
-    JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
-    StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null);
-    DiagnosticCollector<JavaFileObject> diagnosticsCollector = new DiagnosticCollector<JavaFileObject>();
     for (Map.Entry<String, List<File>> ff : files.entrySet()) {
+      LOG.info("Load sources: " + ff.getKey());
       JarInfo jinfo = new JarInfo();
 
       md5.reset();
@@ -430,14 +428,25 @@ public class VimTool {
         } catch (IOException e) {
         }
       } else {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null);
+        DiagnosticCollector<JavaFileObject> diagnosticsCollector = new DiagnosticCollector<JavaFileObject>();
+
         Iterable<? extends JavaFileObject> fileObjects = fileManager.getJavaFileObjectsFromFiles(ff.getValue());
         JavacTask task = (JavacTask) compiler.getTask(null, fileManager, diagnosticsCollector, null, null, fileObjects);
         Iterable<? extends CompilationUnitTree> compilationUnitTrees = null;
-        try {
-          compilationUnitTrees = task.parse();
-        } catch (IOException e) {
-        }
+        int retries = 3; boolean ok = true;
+        //while (retries > 0 && !ok) {
+          try {
+            compilationUnitTrees = task.parse();
+          } catch (IOException e) {
+          //} catch (IllegalStateException e) {
+            //retries--;
+            //ok = false;
+          }
+        //}
         for (CompilationUnitTree unit : compilationUnitTrees) {
+          LOG.info("unit tree source file: " + unit.getSourceFile().getName());
           List<? extends Tree> typeDecls = unit.getTypeDecls();
           LineMap l = unit.getLineMap();
           for (Tree t : typeDecls) {

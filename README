@@ -1,10 +1,21 @@
 Java omni-completion for Vim 7.x
 
-Starting point of the project is this one: http://www.vim.org/scripts/script.php?script_id=1785, created by Mr. Fang Cheng. 
-I also found some modifications here: https://github.com/VictorDenisov/javacomplete
+Starting point of the projec is: 
+* https://github.com/VictorDenisov/javacomplete, by Victor Denisov, which in turn is started by 
+* http://www.vim.org/scripts/script.php?script_id=1785, created by Mr. Fang Cheng. 
 
-I do not take credit for any of the work, I have contacted the authors about these modifications
+I do not take credit for any of the work, I have contacted the authors about these modifications.
 
 Modifications
 
+javacomplete.vim is a vim plugin that uses
+* a java parser written in plain vim for completion in source code files. 
+* a java reflection class written in java for completion from jars / .class files
 
+I have made the following changes:
+
+* added javacomplete#GoToDefinition; should open the definition of any varible inside the file, or outside
+* changed the Reflection.java mechanism with a new tool, that
+** introspects and saves caches with parsed source / introspection data for both source and binary classes
+
+* the vim script parser is kept for the current file. 
