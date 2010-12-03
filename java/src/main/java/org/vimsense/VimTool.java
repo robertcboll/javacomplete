@@ -411,6 +411,77 @@ public class VimTool {
     return javaFiles;
   }
 
+  public void reindexSourceFile(final String path) {
+    List<File> files = new ArrayList<File>() {{
+      add(new File(path));
+    }};
+    JarInfo j = new JarInfo();
+    parseSourceFiles(files, j);
+    parseSecondPass(j);
+    LOG.info("reparsed file");
+    all.add(j, true);
+    //dump to disk
+    String sourcePath = getSourcePathForFile(path);
+    LOG.info("found source path: " + sourcePath);
+    if (sourcePath != null && sourcePath != "") {
+      md5.reset();
+      md5.update(sourcePath.getBytes());
+      String digest = new BigInteger(1, md5.digest()).toString(16);
+      String outputFileName = this.cachePath + "source_" + digest + ".json";
+      File digestFile = new File(outputFileName);
+
+      if (digestFile.exists()) {
+        try {
+          JarInfo jinfo = mapper.readValue(digestFile, JarInfo.class);
+          jinfo.add(j, true);
+          mapper.writeValue(digestFile, jinfo);
+        } catch(IOException e) { }
+      }
+    }
+  }
+
+  public void parseSourceFiles(List<File> files, JarInfo jinfo) {
+    JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+    StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null);
+    DiagnosticCollector<JavaFileObject> diagnosticsCollector = new DiagnosticCollector<JavaFileObject>();
+
+    Iterable<? extends JavaFileObject> fileObjects = fileManager.getJavaFileObjectsFromFiles(files);
+    JavacTask task = (JavacTask) compiler.getTask(null, fileManager, diagnosticsCollector, null, null, fileObjects);
+    Iterable<? extends CompilationUnitTree> compilationUnitTrees = null;
+    int retries = 3; boolean ok = true;
+    //while (retries > 0 && !ok) {
+      try {
+        compilationUnitTrees = task.parse();
+      } catch (IOException e) {
+      //} catch (IllegalStateException e) {
+        //retries--;
+        //ok = false;
+      }
+    //}
+    for (CompilationUnitTree unit : compilationUnitTrees) {
+      LOG.info("unit tree source file: " + unit.getSourceFile().getName());
+      List<? extends Tree> typeDecls = unit.getTypeDecls();
+      LineMap l = unit.getLineMap();
+      for (Tree t : typeDecls) {
+        if (t.getKind() == Kind.CLASS) {
+          SourceClassIntrospector.putClassInfoToMap(jinfo, (JCClassDecl) t, unit, l, null);
+        } else {
+          // fix static blocks
+          //System.out.println("WARNING!!!!!!!!!!");
+        }
+      }
+    }
+  }
+
+  public String getSourcePathForFile(String path) {
+    for (String sourcePath: this.sourcePaths) {
+      if (path.indexOf(sourcePath) == 0) {
+        return sourcePath;
+      }
+    }
+    return "";
+  }
+
   public void loadSources(Map<String, List<File>> files, boolean forceRefresh) {
     for (Map.Entry<String, List<File>> ff : files.entrySet()) {
       LOG.info("Load sources: " + ff.getKey());
@@ -428,36 +499,7 @@ public class VimTool {
         } catch (IOException e) {
         }
       } else {
-        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
-        StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null);
-        DiagnosticCollector<JavaFileObject> diagnosticsCollector = new DiagnosticCollector<JavaFileObject>();
-
-        Iterable<? extends JavaFileObject> fileObjects = fileManager.getJavaFileObjectsFromFiles(ff.getValue());
-        JavacTask task = (JavacTask) compiler.getTask(null, fileManager, diagnosticsCollector, null, null, fileObjects);
-        Iterable<? extends CompilationUnitTree> compilationUnitTrees = null;
-        int retries = 3; boolean ok = true;
-        //while (retries > 0 && !ok) {
-          try {
-            compilationUnitTrees = task.parse();
-          } catch (IOException e) {
-          //} catch (IllegalStateException e) {
-            //retries--;
-            //ok = false;
-          }
-        //}
-        for (CompilationUnitTree unit : compilationUnitTrees) {
-          LOG.info("unit tree source file: " + unit.getSourceFile().getName());
-          List<? extends Tree> typeDecls = unit.getTypeDecls();
-          LineMap l = unit.getLineMap();
-          for (Tree t : typeDecls) {
-            if (t.getKind() == Kind.CLASS) {
-              SourceClassIntrospector.putClassInfoToMap(jinfo, (JCClassDecl) t, unit, l, null);
-            } else {
-              // fix static blocks
-              //System.out.println("WARNING!!!!!!!!!!");
-            }
-          }
-        }
+        parseSourceFiles(ff.getValue(), jinfo);
         try {
           mapper
             .writeValue(digestFile, jinfo);
@@ -465,6 +507,50 @@ public class VimTool {
         }
       }
       all.add(jinfo);
+    }
+  }
+
+  public void parseSecondPass(JarInfo jinfo) {
+    for (Map.Entry<String, ClassInfo> me : jinfo.classes.entrySet()) {
+      if (me.getValue().secondPass == 1)
+        continue;
+      Set<String> goodImports = SourceClassIntrospector.expandImports(me.getValue().imports, all);
+      ClassInfo c = me.getValue();
+      // all constructors
+      for (ConstructorInfo ci : c.ctors) {
+        for (int i = 0; i < ci.p.size(); i++) {
+          ci.p.set(i, SourceClassIntrospector.getTypeFqn(ci.p.get(i), goodImports));
+        }
+      }
+      for (ConstructorInfo ci : c.declared_ctors) {
+        for (int i = 0; i < ci.p.size(); i++) {
+          ci.p.set(i, SourceClassIntrospector.getTypeFqn(ci.p.get(i), goodImports));
+        }
+      }
+      // all fields
+      for (FieldInfo fi : c.fields) {
+        fi.t = SourceClassIntrospector.getTypeFqn(fi.t, goodImports);
+      }
+      // all fields
+      for (FieldInfo fi : c.declared_fields) {
+        fi.t = SourceClassIntrospector.getTypeFqn(fi.t, goodImports);
+      }
+      // all methods
+      for (MethodInfo mi : c.methods) {
+        for (int i = 0; i < mi.p.size(); i++) {
+          mi.p.set(i, SourceClassIntrospector.getTypeFqn(mi.p.get(i), goodImports));
+        }
+        mi.r = SourceClassIntrospector.getTypeFqn(mi.r, goodImports);
+      }
+      for (MethodInfo mi : c.declared_methods) {
+        for (int i = 0; i < mi.p.size(); i++) {
+          mi.p.set(i, SourceClassIntrospector.getTypeFqn(mi.p.get(i), goodImports));
+        }
+        mi.r = SourceClassIntrospector.getTypeFqn(mi.r, goodImports);
+      }
+      // we don't need imports no more
+      c.imports = new HashSet<String>();
+      c.secondPass = 1;
     }
   }
 
@@ -481,48 +567,9 @@ public class VimTool {
 
       try {
         jinfo = mapper.readValue(digestFile, JarInfo.class);
-        for (Map.Entry<String, ClassInfo> me : jinfo.classes.entrySet()) {
-          if (me.getValue().secondPass == 1)
-            continue;
-          Set<String> goodImports = SourceClassIntrospector.expandImports(me.getValue().imports, all);
-          ClassInfo c = me.getValue();
-          // all constructors
-          for (ConstructorInfo ci : c.ctors) {
-            for (int i = 0; i < ci.p.size(); i++) {
-              ci.p.set(i, SourceClassIntrospector.getTypeFqn(ci.p.get(i), goodImports));
-            }
-          }
-          for (ConstructorInfo ci : c.declared_ctors) {
-            for (int i = 0; i < ci.p.size(); i++) {
-              ci.p.set(i, SourceClassIntrospector.getTypeFqn(ci.p.get(i), goodImports));
-            }
-          }
-          // all fields
-          for (FieldInfo fi : c.fields) {
-            fi.t = SourceClassIntrospector.getTypeFqn(fi.t, goodImports);
-          }
-          // all fields
-          for (FieldInfo fi : c.declared_fields) {
-            fi.t = SourceClassIntrospector.getTypeFqn(fi.t, goodImports);
-          }
-          // all methods
-          for (MethodInfo mi : c.methods) {
-            for (int i = 0; i < mi.p.size(); i++) {
-              mi.p.set(i, SourceClassIntrospector.getTypeFqn(mi.p.get(i), goodImports));
-            }
-            mi.r = SourceClassIntrospector.getTypeFqn(mi.r, goodImports);
-          }
-          for (MethodInfo mi : c.declared_methods) {
-            for (int i = 0; i < mi.p.size(); i++) {
-              mi.p.set(i, SourceClassIntrospector.getTypeFqn(mi.p.get(i), goodImports));
-            }
-            mi.r = SourceClassIntrospector.getTypeFqn(mi.r, goodImports);
-          }
-          // we don't need imports no more
-          c.imports = new HashSet<String>();
-          c.secondPass = 1;
-          all.classes.put(c.fqn, c);
-        }
+        parseSecondPass(jinfo);
+        //all.classes.put(c.fqn, c);
+        all.add(jinfo);
         mapper.writeValue(digestFile, jinfo);
       } catch (IOException e) {
 
@@ -1129,6 +1176,12 @@ public class VimTool {
     @Parameter(names = "-class", description = "class")
     public String klass = "";
 
+    @Parameter(names = "-file", description = "file to reindex")
+    public String file = "";
+
+    @Parameter(names = "-reindex", description = "reindex sources action")
+    public Boolean doReindex = false;
+    
     public VimTool vt;
 
     public Runner() {
@@ -1148,6 +1201,8 @@ public class VimTool {
       doSearchForFqn = false;
       doIndent = false;
       klass = "";
+      file = "";
+      doReindex = false;
     }
 
     public void execute() {
@@ -1181,6 +1236,13 @@ public class VimTool {
 
       } else if (doSearchForFqn) {
 
+      } else if (doReindex) {
+        if (file != "") {
+          LOG.info("reindexing file" + file);
+          vt.reindexSourceFile(file);
+        } else {
+          vt.init(true);
+        }
       }
 
       if (doIndent) {

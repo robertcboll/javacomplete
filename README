@@ -19,3 +19,26 @@ I have made the following changes:
 ** introspects and saves caches with parsed source / introspection data for both source and binary classes
 
 * the vim script parser is kept for the current file. 
+
+Dependencies
+============
+
+* Sun JDK
+* [nailgun](http://martiansoftware.com/nailgun/) client installed
+
+Usage
+=====
+
+Add bindings to your vimrc
+
+    autocmd Filetype java setlocal omnifunc=javacomplete#Complete
+    autocmd Filetype java map <leader>b :call javacomplete#GoToDefinition()<CR>
+
+Create a vim script file containing the list of classes, jars and source paths in your project: 
+
+    call javacomplete#AddClassPath('/home/user/.m2/repository/asm/asm/3.1/asm-3.1.jar')
+    call javacomplete#AddClassPath('/path/to/class/files')
+    call javacomplete#AddSourcePath('/path/to/source')
+    ...
+
+Source the file, edit something in your project. C-x C-o gets you omni completion, <leader>b goes to definition
