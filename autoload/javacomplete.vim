@@ -251,7 +251,20 @@ func! s:EditExisting(fname, command)
     redraw
 endfunc
 
+function! javacomplete#ReindexAllSources()
+    call javacomplete#StartServer()
+    call s:Trace("Reindex")
+    call s:RunVimTool('-reindex', '', '')
+endfunc
+
+function! javacomplete#ReindexFile()
+    let fname = expand("%:p")
+    call s:RunVimTool('-reindex', '-file ' . fname, 's:SearchStaticImports in Batch')
+endfunc
+
 function! javacomplete#GoToDefinition()
+    call javacomplete#StartServer()
+    
     call s:Trace("GoToDefinition")
     call s:FindStart()
     let b:incomplete = expand('<cword>')
@@ -341,6 +354,10 @@ endf
 function! javacomplete#Restart()
     call s:System("ng --nailgun-port 2114 ng-stop", "Complete")
     let g:nailgun_started = 0
+    call javacomplete#StartServer()
+endf
+
+function! javacomplete#StartServer()
     if g:nailgun_started == 0
         let classfile = globpath(&rtp, 'java/target/java_vim_sense-1.0-jar-with-dependencies.jar')
         call s:Trace("Starting classfile: " . classfile)
@@ -355,13 +372,7 @@ function! javacomplete#Complete(findstart, base)
         return s:FindStart()
     endif
 
-    if g:nailgun_started == 0
-        let classfile = globpath(&rtp, 'java/target/java_vim_sense-1.0-jar-with-dependencies.jar')
-        call s:Trace("Starting classfile: " . classfile)
-        call s:System("java -Xmx512m -cp " . classfile . " com.martiansoftware.nailgun.NGServer 2114 &", "Complete")
-        let g:nailgun_started = 1
-    endif
-
+    call javacomplete#StartServer()
     " Return list of matches.
     call s:Trace('b:context_type: "' . b:context_type . '"  b:incomplete: "' . b:incomplete . '"  b:dotexpr: "' . b:dotexpr . '"')
     if b:dotexpr =~ '^\s*$' && b:incomplete =~ '^\s*$'
