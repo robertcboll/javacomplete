@@ -282,37 +282,47 @@ function! javacomplete#GoToDefinition()
         let ident = other
         let other = ""
     endif
+    call s:Trace("identify ident: " . ident . "; " . other)
     if ident != ''
-        if ident[0:0] ==# tolower(ident[0:0]) || ident ==# toupper(ident)
+        if stridx(ident, '.') >= 0 && other != ""
+            call s:Trace("go to fqn: " . ident . '.' . other)
+            let ci = s:DoGetClassInfo(ident . '.' . other)
+            call s:Trace("ci: " . string(ci))
+            if get(ci, 'source', '') != ''
+                call s:EditExisting(get(ci, 'source', ''), '')
+            endif
+        elseif (ident[0:0] ==# tolower(ident[0:0]) || ident ==# toupper(ident))
             let targetPos = java_parser#MakePos(line('.')-1, col('.')-1)
             let trees = s:SearchNameInAST(unit, ident, targetPos, 1)
             call s:Trace("trees: " . string(trees))
             if other == '' " go to definition in this file
                 call s:Trace("Like no other")
                 if len(trees) > 0
-                let pp = java_parser#DecodePos(trees[0]['pos'])
-                call setpos('.', [0, pp.line + 1, pp.col, 0])
+                    let pp = java_parser#DecodePos(trees[0]['pos'])
+                    call setpos('.', [0, pp.line + 1, pp.col, 0])
                     call s:Trace("DONE!!!!!!!!!!!!!!!!!!!!!!!")
                 endif
             else
-                let type = trees[0].t
-                let ci = s:DoGetClassInfo(type)
-                if get(ci, 'source', '') != ''
-                    if other != ''
-                        for f in get(ci, 'fields', [])
-                            if f.n ==# other
-                                call s:EditExisting(get(ci, 'source', ''), 'call setpos(".", [0, ' . f.pos[0]. ', ' . f.pos[1] . ', ' .  '0])')
-                                "call setpos(".", [0, f.pos[0], f.pos[1], 0])
-                            endif
-                        endfor
-                        for f in get(ci, 'methods', [])
-                            if f.n ==# other
-                                call s:EditExisting(get(ci, 'source', ''), 'call setpos(".", [0, ' . f.pos[0]. ', ' . f.pos[1] . ', ' .  '0])')
-                                "call setpos(".", [0, f.pos[0], f.pos[1], 0])
-                            endif
-                        endfor
-                    else
-                        call s:Trace(string(ci))
+                if len(trees) > 0
+                    let type = trees[0].t
+                    let ci = s:DoGetClassInfo(type)
+                    if get(ci, 'source', '') != ''
+                        if other != ''
+                            for f in get(ci, 'fields', [])
+                                if f.n ==# other
+                                    call s:EditExisting(get(ci, 'source', ''), 'call setpos(".", [0, ' . f.pos[0]. ', ' . f.pos[1] . ', ' .  '0])')
+                                    "call setpos(".", [0, f.pos[0], f.pos[1], 0])
+                                endif
+                            endfor
+                            for f in get(ci, 'methods', [])
+                                if f.n ==# other
+                                    call s:EditExisting(get(ci, 'source', ''), 'call setpos(".", [0, ' . f.pos[0]. ', ' . f.pos[1] . ', ' .  '0])')
+                                    "call setpos(".", [0, f.pos[0], f.pos[1], 0])
+                                endif
+                            endfor
+                        else
+                            call s:Trace(string(ci))
+                        endif
                     endif
                 endif
             endif
