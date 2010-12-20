@@ -673,6 +673,7 @@ public class VimTool {
         loadSources(loadSourcePaths(), forceRefresh);
         loadSourcesSecondPass(loadSourcePaths());
       } catch (FileNotFoundException e) {
+        LOG.info("File not found: " + e.toString());
       }
     }
   }
