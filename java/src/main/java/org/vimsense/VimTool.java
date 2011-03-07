@@ -329,6 +329,7 @@ public class VimTool {
   public MessageDigest md5;
   public Pattern systemPattern;
   public String cachePath;
+  public String javaJdkSourcePath;
 
   public JarInfo all;
 
@@ -362,6 +363,7 @@ public class VimTool {
         props.load(in);
         systemPattern = Pattern.compile(props.getProperty("excluded_system_paths"));
         cachePath = props.getProperty("cache_folder");
+        javaJdkSourcePath = props.getProperty("jdk_source_path");
       } catch (IOException e) {
         e.printStackTrace();
       }
@@ -585,7 +587,6 @@ public class VimTool {
   public void loadSystemClasses() {
     JarClassLoader jcl = new JarClassLoader();
     for (String path : PathUtils.getSystemClassPath()) {
-      LOG.info("doing system classpath: " + path);
       JarInfo j = new JarInfo();
       md5.reset();
       md5.update(path.getBytes());
@@ -593,6 +594,7 @@ public class VimTool {
       String outputFileName = this.cachePath + "system_" + digest + ".json";
       File digestFile = new File(outputFileName);
 
+      LOG.info("doing system classpath: " + path + ", digest: " + digestFile.getAbsolutePath());
       if (digestFile.exists()) {
         try {
           j = mapper.readValue(digestFile, JarInfo.class);
@@ -604,7 +606,9 @@ public class VimTool {
           if (!filteredClass(s, systemPattern)) {
             try {
               Class c = jcl.getSystemClassLoader().loadClass(s);
-              BinaryClassIntrospector.putClassInfoToMap(j, c, false);
+              LOG.info("  system class: " + c.getName());
+              LOG.info("  " + javaJdkSourcePath + c.getName().replace('.', '/') + ".java");
+              BinaryClassIntrospector.putClassInfoToMap(j, c, false, javaJdkSourcePath + c.getName().replace('.', '/') + ".java");
             } catch (Throwable e) {
             }
           }
@@ -644,7 +648,7 @@ public class VimTool {
           if (!filteredClass(s, systemPattern)) {
             try {
               Class c = jcl.loadClass(s);
-              BinaryClassIntrospector.putClassInfoToMap(j, c, false);
+              BinaryClassIntrospector.putClassInfoToMap(j, c, false, null);
             } catch (Throwable e) {
             }
           }
@@ -679,9 +683,14 @@ public class VimTool {
   }
 
   public static class BinaryClassIntrospector {
-    private static void putClassInfoToMap(JarInfo collect, Class clazz, boolean isInner) {
+    private static void putClassInfoToMap(JarInfo collect, Class clazz, boolean isInner, String source) {
       ClassInfo c = new ClassInfo();
-      c.source = "";
+      if (source != null) {
+        c.source = source;
+      } else {
+        c.source = "";
+      }
+
       c.flags = Integer.toString(clazz.getModifiers(), 2);
       c.name = clazz.getName().replace('$', '.');
       c.pkg = clazz.getPackage().getName();
@@ -710,8 +719,8 @@ public class VimTool {
       putMethods(c.declared_methods, clazz.getDeclaredMethods(), clazz);
 
       if (!isInner) {
-        putClasses(c.classes, collect, clazz.getClasses());
-        putClasses(c.declared_classes, collect, clazz.getDeclaredClasses());
+        putClasses(c.classes, collect, clazz.getClasses(), source);
+        putClasses(c.declared_classes, collect, clazz.getDeclaredClasses(), source);
       }
 
       collect.classes.put(c.fqn, c);
@@ -763,10 +772,11 @@ public class VimTool {
       }
     }
 
-    private static void putClasses(List<String> bag, JarInfo collect, Class[] classes) {
+    private static void putClasses(List<String> bag, JarInfo collect, Class[] classes, String source) {
       for (Class c : classes) {
+        LOG.info("putClasses internal: " + c.getName());
         bag.add(c.getName().replace('$', '.'));
-        putClassInfoToMap(collect, c, true);
+        putClassInfoToMap(collect, c, true, source);
       }
     }
   }
