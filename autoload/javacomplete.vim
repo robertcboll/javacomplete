@@ -119,7 +119,6 @@ function! s:FindStart()
     let b:context_type = s:CONTEXT_OTHER
 
     let statement = s:GetStatement()
-    call s:Trace('statement: "' . statement . '"')
 
     if statement =~ '[.0-9A-Za-z_]\s*$'
         let valid = 1
@@ -253,7 +252,6 @@ endfunc
 
 function! javacomplete#ReindexAllSources()
     call javacomplete#StartServer()
-    call s:Trace("Reindex")
     call s:RunVimTool('-reindex', '', '')
 endfunc
 
@@ -265,10 +263,8 @@ endfunc
 function! javacomplete#GoToDefinition()
     call javacomplete#StartServer()
     
-    call s:Trace("GoToDefinition")
     call s:FindStart()
     let b:incomplete = expand('<cword>')
-    call s:Trace('b:context_type: "' . b:context_type . '"  b:incomplete: "' . b:incomplete . '"  b:dotexpr: "' . b:dotexpr . '"')
     let unit = javacomplete#parse()
     if b:dotexpr != ''
         let ident = b:dotexpr[:-2]
@@ -277,30 +273,23 @@ function! javacomplete#GoToDefinition()
         let ident = b:incomplete
         let other = ''
     endif
-    call s:Trace("identify ident: " . ident . "; " . other)
     if ident == "this"
         let ident = other
         let other = ""
     endif
-    call s:Trace("identify ident: " . ident . "; " . other)
     if ident != ''
         if stridx(ident, '.') >= 0 && other != ""
-            call s:Trace("go to fqn: " . ident . '.' . other)
             let ci = s:DoGetClassInfo(ident . '.' . other)
-            call s:Trace("ci: " . string(ci))
             if get(ci, 'source', '') != ''
                 call s:EditExisting(get(ci, 'source', ''), '')
             endif
         elseif (ident[0:0] ==# tolower(ident[0:0]) || ident ==# toupper(ident))
             let targetPos = java_parser#MakePos(line('.')-1, col('.')-1)
             let trees = s:SearchNameInAST(unit, ident, targetPos, 1)
-            call s:Trace("trees: " . string(trees))
             if other == '' " go to definition in this file
-                call s:Trace("Like no other")
                 if len(trees) > 0
                     let pp = java_parser#DecodePos(trees[0]['pos'])
                     call setpos('.', [0, pp.line + 1, pp.col, 0])
-                    call s:Trace("DONE!!!!!!!!!!!!!!!!!!!!!!!")
                 endif
             else
                 if len(trees) > 0
@@ -327,10 +316,8 @@ function! javacomplete#GoToDefinition()
                 endif
             endif
         else
-        	call s:Trace("gotodefinition: " . ident)
         	let typeByName = s:SearchTypeByName(ident, unit)
             if len(typeByName) > 0
-                call s:Trace("typeByName: " . string(typeByName[0]))
                 let pos = java_parser#DecodePos(typeByName[0].pos)
                 call setpos(".", [0, pos.line + 1, pos.col, 0])
             else
@@ -350,14 +337,12 @@ function! javacomplete#GoToDefinition()
                         endif
                     endfor
                 else
-                    call s:Trace(string(ci))
                 endif
             endif
         endif
         endif
     else
     endif
-    call s:Trace("function is done")
     " klazz
 endf
 
@@ -439,7 +424,7 @@ function! javacomplete#Complete(findstart, base)
         return result
     endif
 
-    if strlen(b:errormsg) > 0
+    if exists("b:errormsg") && strlen(b:errormsg) > 0
         echoerr 'javacomplete error: ' . b:errormsg
         let b:errormsg = ''
     endif
@@ -448,7 +433,6 @@ endfunction
 " Precondition:    incomplete must be a word without '.'.
 " return all the matched, variables, fields, methods, types, packages
 fu! s:CompleteAfterWord(incomplete)
-    call s:Trace("Complete after word *******: " . a:incomplete)
     " packages in jar files
     if !exists('s:all_packages_in_jars_loaded')
         call s:DoGetPackageInfoByReflection('-', '-P')
@@ -478,12 +462,23 @@ fu! s:CompleteAfterWord(incomplete)
         for fqn in s:GetImports('imports_fqn')
             let name = fqn[strridx(fqn, ".")+1:]
             if name =~ '^' . a:incomplete
-                call s:Trace("Full Class Name: " . fqn)
                 call add(types, {'kind': 'C', 'word': name, 'fqn': fqn})
             endif
         endfor
+        for fqn in s:GetImports('imports_star')
+            let fqn = fqn[0:strridx(fqn, ".")-1]
+            call s:DoGetTypeInfoForFQN([fqn], "")
+            let ti = s:GetMembers(fqn)    " s:DoGetPackegInfo(ident)
+            if len(ti) > 0
+                for cn in ti
+                    let name = cn['word']
+                    if name =~ '^' . a:incomplete
+                        call add(types, cn)
+                    endif
+                endfor
+            endif
+        endfor
 
-        call s:Trace("package: " . s:GetPackageName())
         let packageName = s:GetPackageName()
         let dp = get(s:cache, packageName, {})
         if dp != {}
@@ -491,7 +486,6 @@ fu! s:CompleteAfterWord(incomplete)
                 let fullClassName = packageName . "." . shortClassName
                 let name = fullClassName[strridx(fullClassName, ".")+1:]
                 if name =~ '^' . a:incomplete
-                    call s:Trace("Full Class Name:" . fullClassName)
                     call add(types, {'kind': 'C', 'word': name, 'fqn': fullClassName})
                 endif
             endfor
@@ -536,7 +530,6 @@ endfu
 " return members of the value of expression
 function! s:CompleteAfterDot(expr)
     let items = s:ParseExpr(a:expr)        " TODO: return a dict containing more than items
-    call s:Trace("CompleteAfterDot: " . string(items))
     if empty(items)
         return []
     endif
@@ -570,7 +563,6 @@ function! s:CompleteAfterDot(expr)
         let i += 1
     endwhile
 
-    call s:Trace("CompleteAfterDot items: " . string(items))
 
     if i > 1
         " cases: "this.|", "super.|", "ClassName.this.|", "ClassName.super.|", "TypeName.class.|"
@@ -1137,6 +1129,7 @@ function! s:ParseImportsDeclarations()
 endfunction
 
 function! s:UpdateImportsCache(filekey)
+    
     let props = get(s:files, a:filekey, {})
 
     let props['imports'] = a:filekey == s:GetCurrentFileKey() ? s:ParseImportsDeclarations() : props.unit.imports
@@ -1406,7 +1399,6 @@ fu! s:SearchForName(name, first, fullmatch)
         return result
     endif
 
-    call s:Trace("SearchForName: " . a:name)
     " use java_parser.vim
     if javacomplete#GetSearchdeclMethod() == 4
         " declared in current file
@@ -1451,7 +1443,6 @@ endfu
 " Parser.GetType() in insenvim
 function! s:GetDeclaredClassName(var)
     let var = s:Trim(a:var)
-    call s:Trace('GetDeclaredClassName for "' . var . '"')
     if var =~# '^\(this\|super\)$'
         return var
     endif
@@ -1509,7 +1500,6 @@ function! s:GetDeclaredClassName(var)
     endif
 
     let &ignorecase = ic
-    call s:Trace('GetDeclaredClassName: cannot find')
     return ''
 endfunction
 
@@ -1557,7 +1547,6 @@ fu! s:UpdateFQN(tree, qn)
     elseif a:tree.tag == 'CLASSDEF'
         let a:tree.fqn = a:qn . a:tree.name
         if type(a:tree.defs) != type([])
-            call s:Trace("UpdateFQN: " . string(a:tree))
             for def in a:tree.defs
                 if def.tag == 'CLASSDEF'
                     call s:UpdateFQN(def, a:tree.fqn . '.')
@@ -1616,7 +1605,7 @@ endfu
 " Return a stack of enclosing types (including local or anonymous classes).
 " Given the optional argument, return all (toplevel or static member) types besides enclosing types.
 fu! s:SearchTypeByName(name, tree)
-    let s:TreeVisitor.CLASSDEF    = 'call s:Trace("TreeVisitor.CLASSDEF: " . string(get(a:tree, "name", ""))) | if get(a:tree, "name", "") != "" && a:param.name =~ get(a:tree, "name", "") | call add(a:param.result, a:tree) | endif | call self.visit(a:tree.defs, a:param) '
+    let s:TreeVisitor.CLASSDEF    = 'if get(a:tree, "name", "") != "" && a:param.name =~ get(a:tree, "name", "") | call add(a:param.result, a:tree) | endif | call self.visit(a:tree.defs, a:param) '
     let s:TreeVisitor.METHODDEF    = 'if has_key(a:tree, "body") | call self.visit(a:tree.body, a:param) | endif'
     let s:TreeVisitor.VARDEF    = 'if has_key(a:tree, "init") | call self.visit(a:tree.init, a:param) | endif'
 
@@ -2172,7 +2161,7 @@ fu! s:Info(msg)
 endfu
 
 fu! s:Log(level, key, ...)
-    if a:level >= -1 "javacomplete#GetLogLevel()
+    if a:level >= -1 "javacomplete#GetLogLevel() -1
 ruby <<EOF
         key = VIM::evaluate("a:key")
         File.open("#{ENV['HOME']}/javacomplete.txt", "a+") { |f|
@@ -2393,8 +2382,12 @@ fu! s:DoGetClassInfo(class, ...)
     " 4 & 5
     " NOTE: Keeps the fqn of the same package first!!
     call s:Info('A4&5')
+    call s:Trace("typename: " . typename)
+    call s:Trace("packagename: " . packagename)
+    call s:Trace("class: " . a:class)
     let fqns = [empty(packagename) ? typename : packagename . '.' . typename]
     for p in s:GetImports('imports_star', filekey)
+        call s:Trace("@@@@@@@@@@@@@@@@@@@@ imports_star: " . p . typename)
         call add(fqns, p . typename)
     endfor
     call s:Info("After A4&5: " . string(fqns))
