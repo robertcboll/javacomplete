@@ -40,6 +40,8 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -475,6 +477,14 @@ public class VimTool {
     }
   }
 
+  public static class GoodClassComparator implements Comparator<String> {
+    public int compare(String l, String r) {
+      if (l.indexOf("javax") == 0)
+        return 1;
+      return l.compareTo(r);
+    }
+  }
+
   public String getSourcePathForFile(String path) {
     for (String sourcePath: this.sourcePaths) {
       if (path.indexOf(sourcePath) == 0) {
@@ -501,6 +511,7 @@ public class VimTool {
         } catch (IOException e) {
         }
       } else {
+        LOG.info("Reparse sources: " + ff.getKey());
         parseSourceFiles(ff.getValue(), jinfo);
         try {
           mapper
@@ -571,7 +582,7 @@ public class VimTool {
         jinfo = mapper.readValue(digestFile, JarInfo.class);
         parseSecondPass(jinfo);
         //all.classes.put(c.fqn, c);
-        all.add(jinfo);
+        all.add(jinfo, true);
         mapper.writeValue(digestFile, jinfo);
       } catch (IOException e) {
 
@@ -1029,6 +1040,31 @@ public class VimTool {
     return out.toString();
   }
 
+  public String findClassesLikeName(String classNamePiece) {
+
+    ArrayList<String> tmp =  new ArrayList<String>();
+
+    for (String e: all.classes.keySet()) {
+      int l = e.indexOf("." + classNamePiece);
+      int d = e.lastIndexOf(".");
+      int r = e.indexOf("$" + classNamePiece);
+      if (l >= d || r >= d) {
+        tmp.add(e);
+      }
+    }
+    Collections.sort(tmp, new GoodClassComparator());
+
+    StringBuffer out = new StringBuffer();
+
+    out.append("[");
+    for (String e: tmp) {
+      out.append("'" + e + "'");
+      out.append(",");
+    }
+    out.append("]");
+    return out.toString();
+  }
+
   public String findClass(String className, boolean single) {
     if (all.classes.containsKey(className)) {
       ClassInfo ci = all.classes.get(className);
@@ -1244,7 +1280,7 @@ public class VimTool {
       } else if (doCheckExistedAndRead) {
         toPrint = vt.checkExistedAndRead(klass);
       } else if (doSearchForName) {
-
+        toPrint = vt.findClassesLikeName(klass);
       } else if (doSearchForFqn) {
 
       } else if (doReindex) {

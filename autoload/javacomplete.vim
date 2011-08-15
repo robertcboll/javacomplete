@@ -253,6 +253,7 @@ endfunc
 function! javacomplete#ReindexAllSources()
     call javacomplete#StartServer()
     call s:RunVimTool('-reindex', '', '')
+    let s:cache = {}
 endfunc
 
 function! javacomplete#ReindexFile()
@@ -346,6 +347,39 @@ function! javacomplete#GoToDefinition()
     " klazz
 endf
 
+function! javacomplete#RestartWithFolder()
+    call s:Trace("RestartWithFolder")
+    
+    call javacomplete#LoadConfig(1)
+    call javacomplete#Restart()
+endf
+
+function! javacomplete#LoadConfig(reset)
+  call s:Trace("LoadConfig")
+  let l:local_conf = findfile('.java_complete', '.;')
+  if l:local_conf != '' && filereadable(l:local_conf)
+    let l:opts = readfile(l:local_conf)
+    if a:reset
+        call javacomplete#SetSourcePath("")
+        call javacomplete#SetClassPath("")
+    endif
+
+    for l:opt in l:opts
+      " Better handling of absolute path
+      " I don't know if those pattern will work on windows
+      " platform
+      if matchstr(l:opt, '^c=') != ''
+          call s:Trace("LoadConfig found class: " . substitute(l:opt, '^c=', '', 'g'))
+          call javacomplete#AddClassPath(substitute(l:opt, '^c=', '', 'g'))
+      else
+          call s:Trace("LoadConfig found source: " . substitute(l:opt, '^s=', '', 'g'))
+          call javacomplete#AddSourcePath(substitute(l:opt, '^s=', '', 'g'))
+      endif
+    endfor
+  endif
+
+endf
+
 function! javacomplete#Restart()
     call s:System("ng --nailgun-port 2114 ng-stop", "Complete")
     let g:nailgun_started = 0
@@ -370,6 +404,7 @@ function! javacomplete#Complete(findstart, base)
     call javacomplete#StartServer()
     " Return list of matches.
     call s:Trace('b:context_type: "' . b:context_type . '"  b:incomplete: "' . b:incomplete . '"  b:dotexpr: "' . b:dotexpr . '"')
+    let l:tmp_incomplete = b:incomplete
     if b:dotexpr =~ '^\s*$' && b:incomplete =~ '^\s*$'
         return []
     endif
@@ -422,6 +457,15 @@ function! javacomplete#Complete(findstart, base)
 
         call s:Debug('finish completion in ' . reltimestr(reltime(s:et_whole)) . 's')
         return result
+    else
+        call s:Trace("Got here, no completion")
+        let res = s:RunVimTool('-n', '-class ' . l:tmp_incomplete, 'getclassnamepiece')
+        if res =~ "^['"
+        	call s:Trace("result: " . res)
+            let result = eval(res)
+            return result
+        endif
+
     endif
 
     if exists("b:errormsg") && strlen(b:errormsg) > 0
@@ -429,6 +473,132 @@ function! javacomplete#Complete(findstart, base)
         let b:errormsg = ''
     endif
 endfunction
+
+func! s:CheckAndAddImport(cls) "{{{2
+    if match(a:cls,'\<\(char\|int\|void\|long\|double\|byte\|boolean\|float\)\>')==0
+        return 0
+    endif
+    return s:AddImport(a:cls)
+endf
+
+func! javacomplete#ReplaceWithImport() "{{{2
+        let l:line = line('.')
+	let l:column = col('.')
+        let l:str = getline(l:line)
+	let l:head = strpart(l:str,0,match(l:str,'\([ \t,){(<]\|$\)',l:column))
+        if l:head==''
+            return
+        endif
+	"let l:target = strpart(matchstr(l:head,"[ \\t,(]\\(\\i\\+\\.\\)\\+\\i\\+$"),1)
+	let l:target = strpart(matchstr(l:head,'[^0-9A-Za-z\.]\(\i\+\.\)\+\i\+$'),1)
+        if l:target == ''
+            return 
+        endif
+        let l:target_sub = strpart(l:target,match(l:target,"\\.\\i\\+$")+1)
+
+        let l:line_pkg = search('^\s*package\s\+','nb')+1
+
+        let l:line_imp = search('^\s*import\s\+'.l:target,'nb') +1
+        if l:line_imp ==1
+            exec '%s/'.l:target.'/'.l:target_sub.'/g'
+            "call append(l:line_pkg,'import '.l:target.';')
+			let idx = s:CheckAndAddImport(l:target)
+            call cursor(l:line+idx,l:column-strlen(l:target)+strlen(l:target_sub))
+        else
+            exec l:line_imp.',$s/'.l:target.'/'.l:target_sub.'/g'
+            call cursor(l:line,l:column-strlen(l:target)+strlen(l:target_sub))
+        endif
+endf
+
+func! s:Vjde_get_pkg(cls) "{{{2
+    return substitute(a:cls,'^\(\(\w\+\.\)*\)\(\w\+\)$','\1','')
+endf
+func! s:Vjde_get_cls(cls)
+    return substitute(a:cls,'^\(\(\w\+\.\)*\)\(\w\+\)$','\3','')
+endf
+
+func! s:AddImport(cls) "{{{2
+    if match(a:cls,'^java\.lang\.[A-Z]')==0
+        return 0
+    endif
+    let l:line_imp = search('^\s*import\s\+'.a:cls.'\s*;','nb')
+    if l:line_imp > 0 
+            return 0
+    endif
+    let pkg = s:Vjde_get_pkg(a:cls)
+    let l:line_imp = search('^\s*import\s\+'.pkg.'\*\s*;','nb')
+    if l:line_imp > 0 
+            return 0
+    endif
+    let l:line_imp = search('^\s*import\s\+','nb')
+    if l:line_imp <= 0 
+            let l:line_imp = search('^\s*package\s\+','nb')
+    endif
+    call append(l:line_imp,'import '.a:cls.';')
+    return 1
+endf
+
+func! javacomplete#SortImports() range "{{{2
+    let lines = []
+    let index = a:firstline
+    while index<= a:lastline
+        call add(lines,getline(index))
+        let index+=1
+    endwhile
+    call filter(lines,'strlen(v:val)>0')
+    call sort(lines,'s:PackageNameCompare')
+    let lstart = a:firstline
+    let mcount = lstart
+    let header =len(lines)>0? substitute(lines[0],'\s*import\s\+\(static\s\+\)*\(\w\+\).*$','\2',''):''
+    for lstr in lines
+        let mh = substitute(lstr,'\s*import\s\+\(static\s\+\)*\(\w\+\).*$','\2','')
+        if mh != header
+            let header = mh
+            if mcount <= a:lastline
+                call setline(mcount,'')
+            else
+                call append(mcount-1,'')
+            endif
+            let mcount+=1
+        endif
+        if mcount <= a:lastline
+            call setline(mcount,lstr)
+        else
+            call append(mcount-1,lstr)
+        endif
+        let mcount+=1
+    endfor
+    return
+endf
+func! s:PackageNameCompare1(i1,i2)
+    return a:i1==a:i2?0 : a:i1 > a:i2 ? 1 : -1
+endf
+func! s:PackageNameCompare(i1,i2) "{{{2
+    let maw = substitute(a:i1, '\s*import\s\+\(static\s\+\)*\(\w\+\)\..*$', '\2', '')
+    let mbw = substitute(a:i2, '\s*import\s\+\(static\s\+\)*\(\w\+\)\..*$', '\2', '')
+    if maw == mbw
+        return s:PackageNameCompare1(a:i1, a:i2)
+    endif
+    if maw == 'java'
+        return 1
+    elseif mbw == 'java'
+        return -1
+    elseif maw == 'javax'
+        return 1
+    elseif mbw == 'javax'
+        return -1
+    elseif maw == 'org'
+        return -1
+    elseif mbw == 'org'
+        return 1
+    elseif maw == 'net'
+        return -1
+    elseif mbw == 'net'
+        return 1
+    else
+        return s:PackageNameCompare1(a:i1,a:i2)
+    endif
+endf
 
 " Precondition:    incomplete must be a word without '.'.
 " return all the matched, variables, fields, methods, types, packages
