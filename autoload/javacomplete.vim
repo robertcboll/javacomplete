@@ -349,7 +349,6 @@ endf
 
 function! javacomplete#RestartWithFolder()
     call s:Trace("RestartWithFolder")
-    
     call javacomplete#LoadConfig(1)
     call javacomplete#Restart()
 endf
@@ -371,26 +370,52 @@ function! javacomplete#LoadConfig(reset)
       if matchstr(l:opt, '^c=') != ''
           call s:Trace("LoadConfig found class: " . substitute(l:opt, '^c=', '', 'g'))
           call javacomplete#AddClassPath(substitute(l:opt, '^c=', '', 'g'))
-      else
+      elseif matchstr(l:opt, '^s=') != ''
           call s:Trace("LoadConfig found source: " . substitute(l:opt, '^s=', '', 'g'))
           call javacomplete#AddSourcePath(substitute(l:opt, '^s=', '', 'g'))
       endif
     endfor
   endif
-
 endf
 
 function! javacomplete#Restart()
-    call s:System("ng --nailgun-port 2114 ng-stop", "Complete")
+    if !exists("g:nailgun_port")
+        call s:Trace("Find nailgun port!!!!!!!!!")
+        " find the first open nailgun_port, starting from the first one
+        let l:found_nailgun_port = 0
+        let l:tmp_try = g:first_nailgun_port
+        while l:found_nailgun_port == 0
+            call s:Trace("Try nailgun port: " . string(l:tmp_try))
+            let l:unused = system("/usr/local/bin/nc -z 127.0.0.1 " . string(l:tmp_try))
+            if v:shell_error " FFFOUND !!!
+            	let l:found_nailgun_port = l:tmp_try
+            endif
+            let l:tmp_try = l:tmp_try + 1
+        endwhile
+        let g:nailgun_port = l:found_nailgun_port
+    endif
+    augroup javacomplete
+        autocmd!
+        " attach events
+        autocmd! javacomplete VimLeave * call javacomplete#StopServer()
+        " attach events
+        autocmd! javacomplete BufWritePost *.java call javacomplete#ReindexFile()
+    augroup END
+
+    call s:System("ng --nailgun-port " . g:nailgun_port . " ng-stop", "Complete")
     let g:nailgun_started = 0
     call javacomplete#StartServer()
+endf
+
+function! javacomplete#StopServer()
+    call s:System("ng --nailgun-port " . g:nailgun_port . " ng-stop", "Complete")
 endf
 
 function! javacomplete#StartServer()
     if g:nailgun_started == 0
         let classfile = globpath(&rtp, 'java/target/java_vim_sense-1.0-jar-with-dependencies.jar')
         call s:Trace("Starting classfile: " . classfile)
-        call s:System("java -Xmx512m -cp " . classfile . " com.martiansoftware.nailgun.NGServer 2114 &", "Complete")
+        call s:System("java -Xmx512m -cp " . classfile . " com.martiansoftware.nailgun.NGServer " . g:nailgun_port . " &", "Complete")
         let g:nailgun_started = 1
     endif
 endf
@@ -455,7 +480,6 @@ function! javacomplete#Complete(findstart, base)
             unlet s:padding
         endif
 
-        call s:Debug('finish completion in ' . reltimestr(reltime(s:et_whole)) . 's')
         return result
     else
         call s:Trace("Got here, no completion")
@@ -570,16 +594,23 @@ func! javacomplete#SortImports() range "{{{2
     endfor
     return
 endf
+
 func! s:PackageNameCompare1(i1,i2)
-    return a:i1==a:i2?0 : a:i1 > a:i2 ? 1 : -1
+    return a:i1 == a:i2 ? 0 : a:i1 > a:i2 ? 1 : -1
 endf
+
 func! s:PackageNameCompare(i1,i2) "{{{2
     let maw = substitute(a:i1, '\s*import\s\+\(static\s\+\)*\(\w\+\)\..*$', '\2', '')
     let mbw = substitute(a:i2, '\s*import\s\+\(static\s\+\)*\(\w\+\)\..*$', '\2', '')
     if maw == mbw
         return s:PackageNameCompare1(a:i1, a:i2)
     endif
-    if maw == 'java'
+    if 0
+    elseif maw == 'com'
+        return -1
+    elseif mbw == 'com'
+        return 1
+    elseif maw == 'java'
         return 1
     elseif mbw == 'java'
         return -1
@@ -2360,8 +2391,7 @@ endfu
 
 " Function to run VimTool                        {{{2
 fu! s:RunVimTool(option, args, log)
-    let cmd = g:javacomplete_ng . ' org.vimsense.VimTool --nailgun-port 2114 -sources ' . javacomplete#GetSourcePath() . ' -classes ' . s:GetClassPath() . ' ' . a:option . ' ' . a:args . ''
-    "let cmd = javacomplete#GetJVMLauncher() . classpath . ' Reflection ' . a:option . ' "' . a:args . '"'
+    let cmd = g:javacomplete_ng . ' org.vimsense.VimTool --nailgun-port ' . g:nailgun_port . ' -sources ' . javacomplete#GetSourcePath() . ' -classes ' . s:GetClassPath() . ' ' . a:option . ' ' . a:args . ''
     return s:System(cmd, a:log)
 endfu
 
@@ -2369,7 +2399,6 @@ fu! s:System(cmd, caller)
     call s:Trace(a:cmd)
     let t = reltime()
     let res = system(a:cmd)
-    call s:Debug(reltimestr(reltime(t)) . 's to exec "' . a:cmd . '" by ' . a:caller)
     return res
 endfu
 

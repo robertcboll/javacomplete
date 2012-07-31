@@ -28,6 +28,8 @@ import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.ToolProvider;
 import java.io.File;
+import java.io.BufferedWriter;
+import java.io.FileWriter;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
@@ -370,21 +372,18 @@ public class VimTool {
         e.printStackTrace();
       }
     } else {
-      System.out.println("No properties file found");
+      LOG.info("No properties file found");
     }
-    LOG.info("cachePath: " + cachePath);
     String whereIAm = "";
     try {
       whereIAm = new File(VimTool.class.getProtectionDomain().getCodeSource().getLocation().toURI().getPath()).getParent();
     } catch (Exception e) { }
-    LOG.info("Where i am: " + whereIAm);
     try {
       new File(whereIAm + "/tmp/").mkdirs();
     } catch(Exception e) {
-      
     }
     cachePath = whereIAm + "/tmp/";
-    LOG.info("cachePath: " + cachePath);
+    LOG.info("Initialize, cachePath: " + cachePath);
   }
 
   private static List<File> getFileListingNoSort(File start) throws FileNotFoundException {
@@ -415,6 +414,13 @@ public class VimTool {
     return javaFiles;
   }
 
+  private String getDigest(String message) {
+    md5.reset();
+    md5.update(message.getBytes());
+    String ret = new BigInteger(1, md5.digest()).toString(16);
+    return ret;
+  }
+
   public void reindexSourceFile(final String path) {
     List<File> files = new ArrayList<File>() {{
       add(new File(path));
@@ -422,15 +428,13 @@ public class VimTool {
     JarInfo j = new JarInfo();
     parseSourceFiles(files, j);
     parseSecondPass(j);
-    LOG.info("reparsed file");
+    LOG.info("reindexSourceFile: reparsed file ");
     all.add(j, true);
     //dump to disk
     String sourcePath = getSourcePathForFile(path);
-    LOG.info("found source path: " + sourcePath);
+    LOG.info("reindexSourceFile found source path: " + sourcePath);
     if (sourcePath != null && sourcePath != "") {
-      md5.reset();
-      md5.update(sourcePath.getBytes());
-      String digest = new BigInteger(1, md5.digest()).toString(16);
+      String digest = getDigest(sourcePath);
       String outputFileName = this.cachePath + "source_" + digest + ".json";
       File digestFile = new File(outputFileName);
 
@@ -440,39 +444,6 @@ public class VimTool {
           jinfo.add(j, true);
           mapper.writeValue(digestFile, jinfo);
         } catch(IOException e) { }
-      }
-    }
-  }
-
-  public void parseSourceFiles(List<File> files, JarInfo jinfo) {
-    JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
-    StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null);
-    DiagnosticCollector<JavaFileObject> diagnosticsCollector = new DiagnosticCollector<JavaFileObject>();
-
-    Iterable<? extends JavaFileObject> fileObjects = fileManager.getJavaFileObjectsFromFiles(files);
-    JavacTask task = (JavacTask) compiler.getTask(null, fileManager, diagnosticsCollector, null, null, fileObjects);
-    Iterable<? extends CompilationUnitTree> compilationUnitTrees = null;
-    int retries = 3; boolean ok = true;
-    //while (retries > 0 && !ok) {
-      try {
-        compilationUnitTrees = task.parse();
-      } catch (IOException e) {
-      //} catch (IllegalStateException e) {
-        //retries--;
-        //ok = false;
-      }
-    //}
-    for (CompilationUnitTree unit : compilationUnitTrees) {
-      LOG.info("unit tree source file: " + unit.getSourceFile().getName());
-      List<? extends Tree> typeDecls = unit.getTypeDecls();
-      LineMap l = unit.getLineMap();
-      for (Tree t : typeDecls) {
-        if (t.getKind() == Kind.CLASS) {
-          SourceClassIntrospector.putClassInfoToMap(jinfo, (JCClassDecl) t, unit, l, null);
-        } else {
-          // fix static blocks
-          //System.out.println("WARNING!!!!!!!!!!");
-        }
       }
     }
   }
@@ -499,9 +470,7 @@ public class VimTool {
       LOG.info("Load sources: " + ff.getKey());
       JarInfo jinfo = new JarInfo();
 
-      md5.reset();
-      md5.update(ff.getKey().getBytes());
-      String digest = new BigInteger(1, md5.digest()).toString(16);
+      String digest = getDigest(ff.getKey());
       String outputFileName = this.cachePath + "source_" + digest + ".json";
       File digestFile = new File(outputFileName);
 
@@ -523,6 +492,56 @@ public class VimTool {
     }
   }
 
+  public void parseSourceFiles(List<File> files, JarInfo jinfo) {
+    JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+    StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null);
+    DiagnosticCollector<JavaFileObject> diagnosticsCollector = new DiagnosticCollector<JavaFileObject>();
+
+    Iterable<? extends JavaFileObject> fileObjects = fileManager.getJavaFileObjectsFromFiles(files);
+    JavacTask task = (JavacTask) compiler.getTask(null, fileManager, diagnosticsCollector, null, null, fileObjects);
+    Iterable<? extends CompilationUnitTree> compilationUnitTrees = null;
+    int retries = 3; boolean ok = true;
+    try {
+      compilationUnitTrees = task.parse();
+    } catch (IOException e) {
+      LOG.error(e);
+    }
+    for (CompilationUnitTree unit : compilationUnitTrees) {
+      LOG.info("unit tree source file: " + unit.getSourceFile().getName());
+      List<? extends Tree> typeDecls = unit.getTypeDecls();
+      LineMap l = unit.getLineMap();
+      for (Tree t : typeDecls) {
+        if (t.getKind() == Kind.CLASS) {
+          SourceClassIntrospector.putClassInfoToMap(jinfo, (JCClassDecl) t, unit, l, null);
+        } else {
+          // fix static blocks
+          //System.out.println("WARNING!!!!!!!!!!");
+        }
+      }
+    }
+  }
+
+  public void loadSourcesSecondPass(Map<String, List<File>> files) {
+    // all contains the entire dataset
+    for (Map.Entry<String, List<File>> ff : files.entrySet()) {
+      JarInfo jinfo = new JarInfo();
+
+      String digest = getDigest(ff.getKey());
+      String outputFileName = this.cachePath + "source_" + digest + ".json";
+      File digestFile = new File(outputFileName);
+
+      try {
+        jinfo = mapper.readValue(digestFile, JarInfo.class);
+        parseSecondPass(jinfo);
+        //all.classes.put(c.fqn, c);
+        all.add(jinfo, true);
+        mapper.writeValue(digestFile, jinfo);
+      } catch (IOException e) {
+
+      }
+    }
+  }
+  
   public void parseSecondPass(JarInfo jinfo) {
     for (Map.Entry<String, ClassInfo> me : jinfo.classes.entrySet()) {
       if (me.getValue().secondPass == 1)
@@ -567,29 +586,6 @@ public class VimTool {
     }
   }
 
-  public void loadSourcesSecondPass(Map<String, List<File>> files) {
-    // all contains the entire dataset
-    for (Map.Entry<String, List<File>> ff : files.entrySet()) {
-      JarInfo jinfo = new JarInfo();
-
-      md5.reset();
-      md5.update(ff.getKey().getBytes());
-      String digest = new BigInteger(1, md5.digest()).toString(16);
-      String outputFileName = this.cachePath + "source_" + digest + ".json";
-      File digestFile = new File(outputFileName);
-
-      try {
-        jinfo = mapper.readValue(digestFile, JarInfo.class);
-        parseSecondPass(jinfo);
-        //all.classes.put(c.fqn, c);
-        all.add(jinfo, true);
-        mapper.writeValue(digestFile, jinfo);
-      } catch (IOException e) {
-
-      }
-    }
-  }
-
   public boolean filteredClass(String s, Pattern p) {
     Matcher m = p.matcher(s);
     return m.matches();
@@ -599,11 +595,12 @@ public class VimTool {
     JarClassLoader jcl = new JarClassLoader();
     for (String path : PathUtils.getSystemClassPath()) {
       JarInfo j = new JarInfo();
-      md5.reset();
-      md5.update(path.getBytes());
-      String digest = new BigInteger(1, md5.digest()).toString(16);
+      String digest = getDigest(path);
       String outputFileName = this.cachePath + "system_" + digest + ".json";
       File digestFile = new File(outputFileName);
+      String outputErrorFileName = this.cachePath + "system_" + digest + ".error";
+      File errorFile = new File(outputErrorFileName);
+      StringBuffer errorBuffer = new StringBuffer();
 
       LOG.info("doing system classpath: " + path + ", digest: " + digestFile.getAbsolutePath());
       if (digestFile.exists()) {
@@ -621,11 +618,16 @@ public class VimTool {
               LOG.info("  " + javaJdkSourcePath + c.getName().replace('.', '/') + ".java");
               BinaryClassIntrospector.putClassInfoToMap(j, c, false, javaJdkSourcePath + c.getName().replace('.', '/') + ".java");
             } catch (Throwable e) {
+              LOG.error("ERROR parsing system class: " + s);
+              errorBuffer.append("ERROR parsing system class: " + s + "\n");
             }
           }
         }
         try {
           mapper.writeValue(digestFile, j);
+          BufferedWriter br = new BufferedWriter(new FileWriter(outputErrorFileName));
+          br.write(errorBuffer.toString());
+          br.close();
         } catch (IOException e) {
           LOG.error("IOException: " + e.toString());
         }
@@ -638,15 +640,17 @@ public class VimTool {
   public void loadUserClasses() {
     JarClassLoader jcl = new JarClassLoader();
     for (String path : this.classPaths) {
-      LOG.info("load user class: " + path);
       jcl.add(path);
 
       JarInfo j = new JarInfo();
-      md5.reset();
-      md5.update(path.getBytes());
-      String digest = new BigInteger(1, md5.digest()).toString(16);
+      String digest = getDigest(path);
       String outputFileName = this.cachePath + "user_" + digest + ".json";
+      LOG.info("Load user class file: " + path + ", outputFile: " + outputFileName);
       File digestFile = new File(outputFileName);
+
+      String outputErrorFileName = this.cachePath + "user_" + digest + ".error";
+      File errorFile = new File(outputErrorFileName);
+      StringBuffer errorBuffer = new StringBuffer();
 
       if (digestFile.exists()) {
         try {
@@ -656,16 +660,25 @@ public class VimTool {
       } else {
         List<String> classStrings = PathUtils.generateClassesFromPath(path);
         for (String s : classStrings) {
+          LOG.info(">> Loading class: " + s);
           if (!filteredClass(s, systemPattern)) {
             try {
               Class c = jcl.loadClass(s);
               BinaryClassIntrospector.putClassInfoToMap(j, c, false, null);
             } catch (Throwable e) {
+              LOG.error("ERROR parsing user class: " + s);
+              LOG.error(e);
+              errorBuffer.append("ERROR parsing user class: " + s + "\n");
             }
+          } else {
+            LOG.info("** Filtered user class: " + s);
           }
         }
         try {
           mapper.writeValue(new File(outputFileName), j);
+          BufferedWriter br = new BufferedWriter(new FileWriter(outputErrorFileName));
+          br.write(errorBuffer.toString());
+          br.close();
         } catch (IOException e) {
         }
       }
@@ -734,9 +747,12 @@ public class VimTool {
         putClasses(c.declared_classes, collect, clazz.getDeclaredClasses(), source);
       }
 
+      LOG.info("collect.classes.put: " + c.fqn);
       collect.classes.put(c.fqn, c);
-      if (!isInner)
+      if (!isInner) {
+        LOG.info("not inner, putting to packages" + c.fqn);
         putFqnToPackage(collect.packages, c.fqn, true);
+      }
     }
 
     private static void putConstructors(List<ConstructorInfo> bag, Constructor[] constructors) {
@@ -785,7 +801,6 @@ public class VimTool {
 
     private static void putClasses(List<String> bag, JarInfo collect, Class[] classes, String source) {
       for (Class c : classes) {
-        LOG.info("putClasses internal: " + c.getName());
         bag.add(c.getName().replace('$', '.'));
         putClassInfoToMap(collect, c, true, source);
       }
@@ -1270,28 +1285,32 @@ public class VimTool {
 
       String toPrint = "";
       if (doClassInfo) {
+        LOG.info("COMMAND: doClassInfo: " + klass + ", " + outputSingleClass);
         toPrint = vt.findClass(klass, outputSingleClass);
       } else if (doListAllPackageContent) {
+        LOG.info("COMMAND: listAllPackages");
         toPrint = vt.listAllPackages();
       } else if (doListPackageContentForClass) {
-
+        LOG.info("COMMAND: listPackageContentForClass - NOT IMPLEMENTED");
       } else if (doCheckExisted) {
-
+        LOG.info("COMMAND: checkExisted - NOT IMPLEMENTED");
       } else if (doCheckExistedAndRead) {
+        LOG.info("COMMAND: checkExistedAndRead: " + klass);
         toPrint = vt.checkExistedAndRead(klass);
       } else if (doSearchForName) {
+        LOG.info("COMMAND: searchForName: " + klass);
         toPrint = vt.findClassesLikeName(klass);
       } else if (doSearchForFqn) {
-
+        LOG.info("COMMAND: searchForFqn - NOT IMPLEMENTED");
       } else if (doReindex) {
         if (file != "") {
-          LOG.info("reindexing file" + file);
+          LOG.info("COMMAND: doReindex with file: " + file);
           vt.reindexSourceFile(file);
         } else {
+          LOG.info("COMMAND: doReindex ALL");
           vt.init(true);
         }
       }
-
       if (doIndent) {
         System.out.print(toPrint);
       } else {
