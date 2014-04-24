@@ -106,6 +106,7 @@ let s:cache = {}    " FQN -> member list, e.g. {'java.lang.StringBuffer': classi
 let s:files = {}    " source file path -> properties, e.g. {filekey: {'unit': compilationUnit, 'changedtick': tick, }}
 let s:history = {}    " 
 let g:nailgun_started = 0
+let g:javacomplete_ng = 'ng'    " nailgun binary name (on some systems this may be ng-nailgun)
 
 " FindStart function for completion {{{1
 function! s:FindStart()
@@ -402,13 +403,13 @@ function! javacomplete#Restart()
         autocmd! javacomplete BufWritePost *.java call javacomplete#ReindexFile()
     augroup END
 
-    call s:System("ng --nailgun-port " . g:nailgun_port . " ng-stop", "Complete")
+    call s:System(g:javacomplete_ng . " --nailgun-port " . g:nailgun_port . " ng-stop", "Complete")
     let g:nailgun_started = 0
     call javacomplete#StartServer()
 endf
 
 function! javacomplete#StopServer()
-    call s:System("ng --nailgun-port " . g:nailgun_port . " ng-stop", "Complete")
+    call s:System(g:javacomplete_ng . " --nailgun-port " . g:nailgun_port . " ng-stop", "Complete")
 endf
 
 function! javacomplete#StartServer()
