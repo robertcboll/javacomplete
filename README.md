@@ -1,3 +1,6 @@
+javacomplete
+============
+
 Java omni-completion for Vim 7.x
 
 Starting point of the projec is: 
@@ -29,10 +32,14 @@ Dependencies
 Usage
 =====
 
-Add bindings to your vimrc
+In ftplugin/java.vim -
+Add the following to enable javacomplete:
 
-    autocmd Filetype java setlocal omnifunc=javacomplete#Complete
-    autocmd Filetype java map <leader>b :call javacomplete#GoToDefinition()<CR>
+    setlocal omnifunc=javacomplete#Complete
+
+GoToDefinition example keybind:
+
+    <leader>b :call javacomplete#GoToDefinition()<CR>
 
 Create a vim script file containing the list of classes, jars and source paths in your project: 
 
