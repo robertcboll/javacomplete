@@ -37,6 +37,12 @@ Add the following to enable javacomplete:
 
     setlocal omnifunc=javacomplete#Complete
 
+You will also need this:
+
+```
+let g:nailgun_port='2113'
+```
+
 GoToDefinition example keybind:
 
     <leader>b :call javacomplete#GoToDefinition()<CR>
