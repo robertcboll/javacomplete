@@ -33,6 +33,22 @@
         <version>2.3.1</version>
         <executions>
           <execution>
+            <id>install-tools</id>
+            <phase>validate</phase>
+            <goals>
+              <goal>install-file</goal>
+            </goals>
+            <configuration>
+              <file>${java.home}/../lib/tools.jar</file>
+              <groupId>jdk.tools</groupId>
+              <artifactId>jdk-tools</artifactId>
+              <version>1.8.0</version>
+              <packaging>jar</packaging>
+              <createChecksum>true</createChecksum>
+              <generatePom>true</generatePom>
+            </configuration>
+          </execution>
+          <execution>
             <id>install-nailgun</id>
             <phase>validate</phase>
             <goals>
@@ -78,6 +94,12 @@
   </build>
 
   <dependencies>
+    <dependency>
+      <groupId>jdk.tools</groupId>
+      <artifactId>jdk-tools</artifactId>
+      <version>1.8.0</version>
+    </dependency>
+
     <dependency>
       <groupId>com.martiansoftware</groupId>
       <artifactId>nailgun</artifactId>
