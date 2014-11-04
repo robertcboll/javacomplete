@@ -2364,11 +2364,12 @@ endfu
 
 fu! s:Log(level, key, ...)
     if a:level >= -1 "javacomplete#GetLogLevel() -1
-ruby <<EOF
-        key = VIM::evaluate("a:key")
-        File.open("#{ENV['HOME']}/javacomplete.txt", "a+") { |f|
-          f.write(key + "\n")
-        }
+python <<EOF
+import vim
+import os
+key = vim.eval("a:key")
+with open(os.path.join(os.environ['HOME'], ".vim", "javacomplete.txt"), "a") as f:
+    f.write(key + "\n")
 EOF
     endif
 endfu
