@@ -393,8 +393,11 @@ public class VimTool {
     for (File file : filesDirs) {
       if (file.isFile()) {
         String name = file.getName();
-        if ((name.substring(name.length() - 5, name.length()).equals(".java"))) {
-          result.add(file);
+        if (name.length() > 5)
+        {
+            if ((name.substring(name.length() - 5, name.length()).equals(".java"))) {
+                result.add(file);
+            }
         }
       } else {
         //must be a directory
