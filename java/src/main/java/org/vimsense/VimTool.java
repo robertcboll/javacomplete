@@ -22,6 +22,9 @@ import org.codehaus.jackson.map.ObjectMapper;
 import org.codehaus.jackson.map.SerializationConfig;
 import org.xeustechnologies.jcl.JarClassLoader;
 
+import java.net.URLClassLoader;
+import java.net.URL;
+
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
@@ -642,9 +645,20 @@ public class VimTool {
 
   public void loadUserClasses() {
     JarClassLoader jcl = new JarClassLoader();
+
+    List<URL> urls = new ArrayList<URL>();
+    for (String path : this.classPaths) {
+      File f = new File(path);
+      try {
+        urls.add(f.toURI().toURL());
+      } catch (Throwable e) {
+        continue;
+      }
+    }
+    URLClassLoader ucl = new URLClassLoader(urls.toArray(new URL[0]));
+
     for (String path : this.classPaths) {
       jcl.add(path);
-
       JarInfo j = new JarInfo();
       String digest = getDigest(path);
       String outputFileName = this.cachePath + "user_" + digest + ".json";
@@ -666,7 +680,7 @@ public class VimTool {
           LOG.info(">> Loading class: " + s);
           if (!filteredClass(s, systemPattern)) {
             try {
-              Class c = jcl.loadClass(s);
+              Class c = ucl.loadClass(s);
               BinaryClassIntrospector.putClassInfoToMap(j, c, false, null);
             } catch (Throwable e) {
               LOG.error("ERROR parsing user class: " + s);
