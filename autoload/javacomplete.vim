@@ -416,7 +416,7 @@ function! javacomplete#StartServer()
     if g:nailgun_started == 0
         let classfile = globpath(&rtp, 'java/target/java_vim_sense-1.0-jar-with-dependencies.jar')
         call s:Trace("Starting classfile: " . classfile)
-        call s:System("java -Xmx512m -cp " . classfile . " com.martiansoftware.nailgun.NGServer " . g:nailgun_port . " &", "Complete")
+        call s:System("java -Xmx512m -cp $JAVA_HOME/lib/tools.jar:" . classfile . " com.martiansoftware.nailgun.NGServer " . g:nailgun_port . " &", "Complete")
         let g:nailgun_started = 1
     endif
 endf
