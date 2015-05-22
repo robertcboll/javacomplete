@@ -370,7 +370,7 @@ public class VimTool {
         props.load(in);
         systemPattern = Pattern.compile(props.getProperty("excluded_system_paths"));
         cachePath = props.getProperty("cache_folder");
-        javaJdkSourcePath = props.getProperty("jdk_source_path");
+        javaJdkSourcePath = System.getProperty("java.home") + "/jdk_source/";
       } catch (IOException e) {
         e.printStackTrace();
       }
@@ -918,7 +918,7 @@ public class VimTool {
     public static void putClassInfoToMap(JarInfo collect, JCClassDecl tree, CompilationUnitTree unit, LineMap l,
                                          ClassInfo parent) {
       ClassInfo c = new ClassInfo();
-      c.source = unit.getSourceFile().toUri().toASCIIString();
+      c.source = unit.getSourceFile().toUri().getPath();
       List<? extends ImportTree> imports = unit.getImports();
       for (ImportTree t : imports) {
         JCImport tAsJC = (JCImport) t;
