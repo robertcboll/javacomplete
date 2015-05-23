@@ -370,7 +370,7 @@ public class VimTool {
         props.load(in);
         systemPattern = Pattern.compile(props.getProperty("excluded_system_paths"));
         cachePath = props.getProperty("cache_folder");
-        javaJdkSourcePath = System.getProperty("java.home") + "/jdk_source/";
+        javaJdkSourcePath = System.getProperty("java.home") + "/../jdk_source/";
       } catch (IOException e) {
         e.printStackTrace();
       }
