@@ -2368,7 +2368,7 @@ python <<EOF
 import vim
 import os
 key = vim.eval("a:key")
-with open(os.path.join(os.environ['HOME'], ".vim", "javacomplete.txt"), "a") as f:
+with open(os.path.join(os.environ['HOME'], ".vim", "javacomplete.log"), "a") as f:
     f.write(key + "\n")
 EOF
     endif
